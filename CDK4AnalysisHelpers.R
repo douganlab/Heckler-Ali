@@ -234,7 +234,7 @@ get.clonotyped.barcodes <- function(sample_id, seurat_object) {
 
 
 enumerate.shared.clonotypes <- function(patient_clonotypes, post.treatment = FALSE) {
-  origin_cluster_ids <- c("0", "1", "2", "3", "4", "5A", "5B", "5C", "6", "7", "8", "9", "10")
+  origin_cluster_ids <- c("0", "1", "2", "3", "4", "5E", "5M", "6", "7", "8", "9", "10")
   if (post.treatment) {
     target_cluster_ids <- paste0(origin_cluster_ids, "'")
   } else {

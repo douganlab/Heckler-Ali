@@ -22,12 +22,15 @@ intg_clusters_colors <- c("0" = "#CB449F", "1" = "palevioletred", "2" = "#F9989A
                           "9" = "#DF0000", "10" = "#ADACCB", "11" = "black")
 
 
-draw.cluster.umap <- function(seurat_object, save = FALSE) {
+draw.cluster.umap <- function(seurat_object, cluster_colors = NULL, save = FALSE) {
+  if (is.null(cluster_colors)) {
+    cluster_colors = intg_clusters_colors
+  }
   umap_df <- as.data.frame(Reductions(seurat_object, slot = "umap")@cell.embeddings)
   umap_df$Cluster <- Idents(seurat_object)
   umap_cluster_intg <- ggplot(data = umap_df, aes(x = UMAP_1, y = UMAP_2)) +
     geom_point(shape = 16, aes(colour = Cluster), alpha = 1, size = 0.75) +
-    scale_colour_manual(values = intg_clusters_colors) +
+    scale_colour_manual(values = cluster_colors) +
     guides(colour = guide_legend(override.aes = list(size = 8))) + 
     xlab("UMAP Dimension 1") + ylab("UMAP Dimension 2") + 
     theme.lra() + 
@@ -44,7 +47,6 @@ draw.cluster.umap <- function(seurat_object, save = FALSE) {
     umap_cluster_intg
   }
 }
-
 
 draw.violin.sandwich <- function(seurat_object, genes, save = TRUE) {
   count_data <- GetAssayData(seurat_object$RNA)
@@ -113,7 +115,64 @@ draw.clonal.umap <- function(seurat_object, save = F) {
 }
 
 
-plot.sharing.mat <- function(sharing_mat, prefix = "", high_color = "red3", save = TRUE) {
+draw.gradient.umap <- function(seurat_object, gradient_values, save = FALSE, compact = FALSE) {
+  point_size <- ifelse(compact, 1.0, 1.5)
+  umap_df <- as.data.frame(Reductions(seurat_object, slot = "umap")@cell.embeddings)
+  umap_df$Expression <- gradient_values
+  umap_plot <- ggplot(data = umap_df, aes(x = UMAP_1, y = UMAP_2)) +
+    geom_point(alpha = 1, shape = 16, aes(colour = Expression), size = point_size) +
+    scale_colour_gradient2("MYC Score", low = "royalblue3", mid = "white", high = "red3", oob = scales::squish, limits = c(-60, 50)) +
+    theme.lra() + 
+    theme(panel.grid = element_blank(),
+          panel.border = element_blank(),
+          axis.line = element_line(size = 0.5, arrow = arrow(length = unit(0.1, "inches"))))
+  
+  if (!compact) { 
+    umap_plot <- umap_plot + xlab("UMAP Dimension 1") + ylab("UMAP Dimension 2") 
+  } else {
+    umap_plot <- umap_plot + ggtitle(gene) + 
+      theme(axis.ticks = element_blank(),
+            axis.title = element_blank(),
+            axis.text = element_blank(),
+            legend.text = element_text(size = 10),
+            legend.title = element_text(size = 10))
+  }
+  
+  if (save) {
+    ggsave(paste0("plots/feature_umap.pdf"), umap_plot, width = 6.5, height = 5.5, device = cairo_pdf)
+  } else {
+    umap_plot
+  }
+}
+
+
+draw.highlighted.umap <- function(seurat_object, highlight_cells, highlight_color = NULL, save = F) {
+  if (is.null(highlight_color)) {
+    highlight_color <- "green4"
+  }
+  umap_df <- as.data.frame(Reductions(seurat_object, slot = "umap")@cell.embeddings)
+  umap_df$Highlight <- FALSE
+  umap_df[highlight_cells, "Highlight"] <- TRUE
+  umap_plot <- ggplot(data = umap_df, aes(x = UMAP_1, y = UMAP_2)) +
+    geom_point(data = subset(umap_df, Highlight == F),  shape = 16, colour = "grey85", size = 0.75, alpha = 0.5) +
+    geom_point(data = subset(umap_df, Highlight == T),  shape = 16, colour = highlight_color, size = 0.75, alpha = 0.9) +
+    xlab("UMAP Dimension 1") + ylab("UMAP Dimension 2") + 
+    theme.lra() + 
+    theme(panel.grid = element_blank(),
+          panel.border = element_blank(),
+          axis.line = element_line(size = 0.5, arrow = arrow(length = unit(0.1, "inches"))))
+  if (save) {
+    ggsave(paste0("plots/highlights_umap.pdf"), umap_plot, width = 6, height = 5.5, device = cairo_pdf)
+  } else {
+    umap_plot
+  }
+}
+
+
+plot.sharing.mat <- function(sharing_mat, prefix = "", high_color = "red3", limit_scale = NULL, save = TRUE) {
+  if (is.null(limit_scale)) {
+    limit_scale = max(abs(sharing_mat), na.rm = T) - 1
+  }
   sharing_df <- reshape2::melt(sharing_mat)
   colnames(sharing_df) <- c("ClusterIDY", "ClusterIDX", "Count")
   grid_plot <- ggplot(data = sharing_df, aes(x = ClusterIDX, y = ClusterIDY, fill = Count)) +
@@ -124,7 +183,7 @@ plot.sharing.mat <- function(sharing_mat, prefix = "", high_color = "red3", save
     geom_vline(xintercept = 13.5) +
     geom_hline(yintercept = 13.5) +
     geom_vline(xintercept = 0.5) +
-    geom_hline(yintercept = 0.5) +
+    geom_hline(yintercept = 0.5) +  
     geom_vline(xintercept = 26.5) +
     geom_hline(yintercept = 26.5) +
     xlab("") + ylab("") + theme.lra() + 
@@ -132,13 +191,12 @@ plot.sharing.mat <- function(sharing_mat, prefix = "", high_color = "red3", save
           axis.line = element_blank(),
           axis.text = element_text(face = "bold"),
           axis.ticks = element_blank(),
-          axis.title = element_blank(),
-          panel.border = element_blank())
+          axis.title = element_blank())
   
   if (sum(sharing_mat, na.rm = T) > 0) {
-    grid_plot <- grid_plot + scale_fill_gradient(limits = c(0, max(sharing_mat, na.rm = T) - 1), oob = scales::censor, low = "white", high = high_color, na.value = "grey90", guide = "none")
+    grid_plot <- grid_plot + scale_fill_gradient(limits = c(0, limit_scale), oob = scales::censor, low = "white", high = high_color, na.value = "grey90", guide = "none")
   } else {
-    grid_plot <- grid_plot + scale_fill_gradient(limits = c(min(sharing_mat, na.rm = T) / 2, 0), low = "royalblue3", high = "white", na.value = "grey90", guide = "none")
+    grid_plot <- grid_plot + scale_fill_gradient(limits = c(limit_scale, 0), low = "royalblue3", high = "white", na.value = "grey90", guide = "none")
   }
   
   if (save) {

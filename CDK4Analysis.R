@@ -230,13 +230,89 @@ trm_heatmap
 cd45dp_sub_int <- cd45dp_full_int[, Idents(cd45dp_full_int) == 5]
 cd45dp_sub_int <- ScaleData(cd45dp_sub_int)
 cd45dp_sub_int <- RunPCA(cd45dp_sub_int)
-cd45dp_sub_int <- RunUMAP(cd45dp_sub_int, dims = 1:15, seed.use = 11)
-cd45dp_sub_int <- FindNeighbors(cd45dp_sub_int, dims = 1:15, k.param = 100)
-cd45dp_sub_int <- FindClusters(cd45dp_sub_int, resolution = 0.4)
+cd45dp_sub_int <- RunUMAP(cd45dp_sub_int, dims = 1:12, seed.use = 11)
+cd45dp_sub_int <- FindNeighbors(cd45dp_sub_int, dims = 1:12, k.param = 300)
+cd45dp_sub_int <- FindClusters(cd45dp_sub_int, resolution = 0.3)
+cd45dp_sub_int <- RenameIdents(cd45dp_sub_int, "0" = "5E", "1" = "5M")
 
 # Figure 4A
-draw.cluster.umap(cd45dp_sub_int, F)
+draw.cluster.umap(cd45dp_sub_int, cluster_colors = c("brown", "gold2"), save = F)
 
+# Retrospectively label main Seurat object
+cd45dp_no11_int <- SetIdent(cd45dp_no11_int, cells = WhichCells(cd45dp_sub_int, idents = "5E"), value = "5E")
+cd45dp_no11_int <- SetIdent(cd45dp_no11_int, cells = WhichCells(cd45dp_sub_int, idents = "5M"), value = "5M")
+draw.highlighted.umap(cd45dp_no11_int, highlight_cells = WhichCells(cd45dp_sub_int, idents = "5E"), highlight_color = "brown", T)
+draw.highlighted.umap(cd45dp_no11_int, highlight_cells = WhichCells(cd45dp_sub_int, idents = "5M"), highlight_color = "gold2", T)
+
+# Figure 4D
+fate_markers <- c("NKG7", "GZMH", "GNLY", 
+                  "LGALS1", "ITGB1", "ITGB2",
+                  "ZEB2", "HLA-DRB1", "CD74",
+                  "KLRC3", "MT1F", "TIGIT",
+                  "GZMK", "DUSP2", "LTB", 
+                  "NR4A2", "FOS", "ZFP36L2", 
+                  "IL7R", "AQP3")
+
+fate_exp <- AverageExpression(cd45dp_no11_int, assay = "RNA", features = fate_markers)
+fate_exp_mat <- as.matrix(fate_exp$RNA[, c("4", "5M", "5E", "3", "7")])
+fate_exp_mat <- cbind(fate_exp_mat, rowMeans(fate_exp_mat[, c("3", "7")]))
+fate_exp_mat <- fate_exp_mat[, -c(4,5)]
+colnames(fate_exp_mat) <- c("Memory", "5M", "5E", "Effector")
+fate_exp_z_mat <- t(scale(t(fate_exp_mat)))
+fate_exp_df <- reshape2::melt(fate_exp_z_mat)
+colnames(fate_exp_df) <- c("Gene", "ClusterID", "Expression")
+fate_exp_df$ClusterID <- factor(fate_exp_df$ClusterID, levels = rev(c("Memory", "5M", "5E", "Effector")))
+
+fate_heatmap <- ggplot(data = fate_exp_df, aes(x = Gene, y = ClusterID, fill = Expression)) +
+  geom_tile(colour = "white") +
+  scale_fill_gradient2(low = "royalblue3", mid = "white", high = "red3", limits = c(-1.5, 1.5), breaks = c(-1, 0, 1), name = "Expression\n(z-score)") +
+  scale_y_discrete(expand = expand_scale(0), position = "left") +
+  scale_x_discrete(expand = expand_scale(0)) +
+  theme.lra() +
+  theme(panel.grid = element_blank(),
+        axis.title = element_blank(),
+        axis.text.y = element_text(size = 12),
+        axis.text.x = element_text(size = 12, hjust = 1, angle = 90),
+        panel.border = element_blank(),
+        axis.ticks = element_blank(),
+        axis.line.x = element_blank(),
+        legend.position = "bottom",
+        legend.direction = "horizontal")
+fate_heatmap
+ggsave(fate_heatmap, file = "plots/fate_heamtap.pdf", width = 6, height = 4, device = cairo_pdf)
+
+#### MYC Score #### 
+
+# List was generated with ARACNE
+myc_genes <- read.csv("myc_target_genes.csv", stringsAsFactors = F, header = F)$V1
+myc_gene_expr <- as.matrix(GetAssayData(cd45dp_no11_int$RNA)[myc_genes,])
+myc_gene_expr_avg <- rowMeans(myc_gene_expr)
+myc_gene_expr_sd <- rowSds(myc_gene_expr)
+myc_gene_expr_z <- (myc_gene_expr - myc_gene_expr_avg) / myc_gene_expr_sd
+myc_score <- colSums(myc_gene_expr_z)
+
+sample_id_by_cell <- sapply(Cells(cd45dp_no11_int), function(cellname) {
+  all_subject_ids[sapply(all_subject_ids, grepl, cellname)]
+})
+
+myc_score_df <- data.frame("SampleID" = sample_id_by_cell, "ClusterID" = Idents(cd45dp_no11_int),  "MycScore" = myc_score)
+myc_score_cluster5_df <- subset(myc_score_df, ClusterID %in% c("5E", "5M"))
+myc_score_cluster5_df$ClusterID <- factor(myc_score_cluster5_df$ClusterID, levels = c("5E", "5M"))
+
+cd45dp_sub_int_pre <- cd45dp_sub_int[, (grepl("Pre", Cells(cd45dp_sub_int)) |
+                                          startsWith(Cells(cd45dp_sub_int), "P616_Post") |
+                                          startsWith(Cells(cd45dp_sub_int), "P673_Post")) ]
+
+cd45dp_sub_int_post <- cd45dp_sub_int[, (grepl("Post", Cells(cd45dp_sub_int)) &
+                                           !(startsWith(Cells(cd45dp_sub_int), "P616_Post") |
+                                               startsWith(Cells(cd45dp_sub_int), "P673_Post"))) ]
+
+myc_score_cl5_pre_df <- myc_score_cluster5_df[Cells(cd45dp_sub_int_pre),]
+myc_score_cl5_post_df <- myc_score_cluster5_df[Cells(cd45dp_sub_int_post),]
+
+# Figure 4C
+draw.gradient.umap(cd45dp_sub_int_pre, myc_score_cl5_pre_df$MycScore, save = T)
+draw.gradient.umap(cd45dp_sub_int_post, myc_score_cl5_post_df$MycScore, save = T)
 
 #### Clonotype Sharing Grids #### 
 
@@ -253,7 +329,7 @@ treated_list <- list(p119_clonotypes,
                      p823_clonotypes)
 
 calculate.correction.matrix <- function() {
-  pre_cluster_ids <- c("0", "1", "2", "3", "4", "5A", "5B", "5C", "6", "7", "8", "9", "10")
+  pre_cluster_ids <- c("0", "1", "2", "3", "4", "5E", "5M", "6", "7", "8", "9", "10")
   correction_factors <- rep(0, length(pre_cluster_ids))
   names(correction_factors) <- pre_cluster_ids
   for (pre_cluster_id in pre_cluster_ids) {
@@ -264,8 +340,10 @@ calculate.correction.matrix <- function() {
     current_factor <- sum(unlist(current_subfactors))
     correction_factors[pre_cluster_id] <- current_factor
   }
-  return(matrix(correction_factors, nrow = 13, ncol = 13, byrow = F))
+  return(matrix(correction_factors, nrow = length(pre_cluster_ids), ncol = length(pre_cluster_ids), byrow = F))
 }
+
+mini_correction_mat <- calculate.correction.matrix()
 
 p119_pre_sharing_mat <- compute.pre.clonotypes(p119_clonotypes)
 p560_pre_sharing_mat <- compute.pre.clonotypes(p560_clonotypes)
@@ -278,8 +356,8 @@ total_pre_sharing_mat <- (p119_pre_sharing_mat
                           + p687_pre_sharing_mat
                           + p823_pre_sharing_mat)
 
-corrected_pre_sharing_mat <- ceiling(100 * total_pre_sharing_mat / mini_correction_mat)
-plot.sharing.mat(corrected_pre_sharing_mat, prefix = "pre_norm_", high_color = "green4", save = T)
+corrected_pre_sharing_mat <- round(100 * total_pre_sharing_mat / mini_correction_mat, 0)
+plot.sharing.mat(corrected_pre_sharing_mat, prefix = "pre_norm_", high_color = "green4", limit_scale = 60, save = T)
 
 p119_added_sharing_mat <- compute.added.clonotypes(p119_clonotypes)
 p560_added_sharing_mat <- compute.added.clonotypes(p560_clonotypes)
