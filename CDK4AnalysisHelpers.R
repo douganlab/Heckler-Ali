@@ -260,7 +260,8 @@ enumerate.shared.clonotypes <- function(patient_clonotypes, post.treatment = FAL
 }
 
 
-identify.delta.clonotypes <- function(pre_sharing_df, post_sharing_df, patient_clonotypes, new = TRUE) {
+# method = {"new", "lost", "net"}
+identify.delta.clonotypes <- function(pre_sharing_df, post_sharing_df, patient_clonotypes, method = "new") {
   delta_df <- post_sharing_df
   for (i in 1:nrow(delta_df)) {
     for (j in 1:ncol(delta_df)) {
@@ -271,10 +272,12 @@ identify.delta.clonotypes <- function(pre_sharing_df, post_sharing_df, patient_c
         pre_clonotypes <- pre_clonotypes[startsWith(pre_clonotypes, "U_")]
         post_clonotypes <- unlist(strsplit(post_sharing_df[i,j], ","))
         post_clonotypes <- post_clonotypes[startsWith(post_clonotypes, "U_")]
-        if (new) {
+        if (method == "new") {
           delta_df[i,j]  <- length(setdiff(post_clonotypes, pre_clonotypes))
-        } else {
+        } else if (method == "lost") {
           delta_df[i,j]  <- -1 * length(setdiff(pre_clonotypes, post_clonotypes))
+        } else {
+          delta_df[i,j] <- length(post_clonotypes) - length(pre_clonotypes)
         }
       }
     }
@@ -304,7 +307,7 @@ compute.pre.clonotypes <- function(patient_clonotypes) {
 compute.added.clonotypes <- function(patient_clonotypes) {
   pre_sharing_df <- enumerate.shared.clonotypes(patient_clonotypes)
   post_sharing_df <- enumerate.shared.clonotypes(patient_clonotypes, T)
-  added_sharing_df <- identify.delta.clonotypes(pre_sharing_df, post_sharing_df, patient_clonotypes, T)
+  added_sharing_df <- identify.delta.clonotypes(pre_sharing_df, post_sharing_df, patient_clonotypes, "new")
   return(added_sharing_df)
 }
 
@@ -312,7 +315,26 @@ compute.added.clonotypes <- function(patient_clonotypes) {
 compute.removed.clonotypes <- function(patient_clonotypes) {
   pre_sharing_df <- enumerate.shared.clonotypes(patient_clonotypes)
   post_sharing_df <- enumerate.shared.clonotypes(patient_clonotypes, T)
-  removed_sharing_df <- identify.delta.clonotypes(pre_sharing_df, post_sharing_df, patient_clonotypes, F)
+  removed_sharing_df <- identify.delta.clonotypes(pre_sharing_df, post_sharing_df, patient_clonotypes, "lost")
   return(removed_sharing_df)
+}
+
+compute.net.change.clonotypes <- function(patient_clonotypes) {
+  pre_cluster_ids <- c("0", "1", "2", "3", "4", "5E", "5M", "6", "7", "8", "9", "10")
+  post_cluster_ids <- paste0(origin_cluster_ids, "'")
+  
+  pre_clonotype_count <- unlist(lapply(pre_cluster_ids, function(cluster_id) {
+    unique_cluster_clonotypes <- unique(subset(patient_clonotypes, ClusterID == cluster_id)$Clonotype)
+    length(which(startsWith(unique_cluster_clonotypes, "U_")))
+  }))
+  
+  post_clonotype_count <- unlist(lapply(post_cluster_ids, function(cluster_id) {
+    unique_cluster_clonotypes <- unique(subset(patient_clonotypes, ClusterID == cluster_id)$Clonotype)
+    length(which(startsWith(unique_cluster_clonotypes, "U_")))
+  }))
+  
+  delta_clonotype_count <- post_clonotype_count - pre_clonotype_count
+  names(delta_clonotype_count) <- pre_cluster_ids
+  return(delta_clonotype_count)
 }
 

@@ -107,7 +107,7 @@ cd45dp_full_int <- AddMetaData(cd45dp_full_int, treatments, col.name = "treatmen
 
 DefaultAssay(cd45dp_full_int) <- "integrated"
 cd45dp_full_int <- ScaleData(cd45dp_full_int)
-cd45dp_full_int <- RunPCA(cd45dp_full_int)=
+cd45dp_full_int <- RunPCA(cd45dp_full_int)
 cd45dp_full_int <- RunUMAP(cd45dp_full_int, dims = 1:14)
 cd45dp_full_int <- FindNeighbors(cd45dp_full_int, dims = 1:14)
 cd45dp_full_int <- FindClusters(cd45dp_full_int, resolution = 0.4)
@@ -127,22 +127,59 @@ cluster_labels <- c("0" = "CD45RA+ naive",
                     "9" = "Trm",
                     "10" = "IFN-activated")
 
-# Figure 3C
+# Figure 3B
 draw.cluster.umap(cd45dp_no11_int)
 
-# Figure 4F
+# Supplemental Figure
 draw.clonal.umap(cd45dp_no11_int)
 
-# Supplementary Figure X
+# Figure 3D
 draw.monotone.umap(cd45dp_no11_int[, cd45dp_no11_int$treatment == "Healthy"], "grey20", T)
 draw.monotone.umap(cd45dp_no11_int[, cd45dp_no11_int$treatment == "Cancer-NoCDK4/6i"], "#009E73", T)
 draw.monotone.umap(cd45dp_no11_int[, cd45dp_no11_int$treatment == "Cancer-PostCDK4/6i"], "#E69F00", T)
+all_cluster_ids <- c("1", "2", "3", "5E", "5M", "6", "7", "8", "9", "10")
+pole_cluster_ids <- c("0", "4")
 
-# Figure 3F
-markers <- c("TCF7", "JUN", "IL7R", "HLA-DRB1","GZMH", "AQP3", "DUSP2", "CCL5", "GATA3", "NKG7", "GNLY", "S100A9", "ZNF683", "IRF7")
+cluster_percents_by_patient <- data.frame("ClusterID" = rep(all_cluster_ids, length(all_subject_ids)),
+                                          "PatientID" = unlist(lapply(all_subject_ids, rep, length(all_cluster_ids))),
+                                          "Percentage" = rep(0, length(all_cluster_ids) * length(all_subject_ids)),
+                                          stringsAsFactors = F)
+
+cluster_percents_mat <- matrix(data = 0, nrow = length(all_subject_ids), ncol = length(all_cluster_ids))
+rownames(cluster_percents_mat) <- all_subject_ids
+colnames(cluster_percents_mat) <- all_cluster_ids
+for (i in 1:nrow(cluster_percents_mat)) {
+  for (j in 1:ncol(cluster_percents_mat)) {
+    current_patient <- rownames(cluster_percents_mat)[i]
+    current_cluster <- colnames(cluster_percents_mat)[j]
+    current_cluster_count <- length(which(startsWith(Cells(cd45dp_no11_int), current_patient) &
+                                            Idents(cd45dp_no11_int) == current_cluster))
+    all_clusters_total <- length(which(startsWith(Cells(cd45dp_no11_int), current_patient) &
+                                         !(Idents(cd45dp_no11_int) %in% pole_cluster_ids)))
+    percentage <- (100 * current_cluster_count / all_clusters_total)
+    cluster_percents_mat[i, j] <- round(percentage, 3)
+  }
+}
+write.csv(cluster_percents_mat, file = "tables/cluster_percentages_by_patient_nonpole_updated.csv")
+
+# Figure 3C
+markers <- c("TCF7", 
+             "JUN",
+             "IL7R",
+             "HLA-DRB1",
+             "GZMH",
+             "AQP3",
+             "DUSP2",
+             "CCL5",
+             "GATA3",
+             "NKG7",
+             "GNLY",
+             "S100A9",
+             "ZNF683",
+             "IRF7")
 draw.violin.sandwich(cd45dp_no11_int, markers, T)
 
-# Patient Contribution to Clusters (Figure 3D)
+# Patient Contribution to Clusters (Figure 3E)
 all_cluster_ids <- 0:10
 cluster_percents_by_patient <- data.frame("ClusterID" = rep(all_cluster_ids, length(all_subject_ids)),
                                           "PatientID" = unlist(lapply(all_subject_ids, rep, length(all_cluster_ids))),
@@ -192,38 +229,6 @@ contribution_plot <- ggplot(data = cluster_percents_by_patient, aes(x = PatientI
         axis.text.x = element_text(size = 10, hjust = 1, angle = 45))
 contribution_plot
 
-# Figure 3H
-trm_genes <- c("ZNF683", "CD7", "DUSP2",
-               "KLRC3", "KLRC2", "NCR3",
-               "FXYD2", "LEF1", "STK17A",
-               "FXYD7", "IL7R", "LINC02446",
-               "CD300A", "JUNB", "IFITM3", 
-               "TCF7", "GNLY", "ITGAE", "CD69")
-
-trm_exp <- AverageExpression(cd45dp_no11_int, assay = "RNA", features = trm_genes)
-trm_exp_mat <- as.matrix(trm_exp$RNA[trm_genes,])
-trm_exp_z_mat <- t(scale(t(trm_exp_mat)))
-
-trm_exp_df <- reshape2::melt(trm_exp_z_mat)
-colnames(trm_exp_df) <- c("Gene", "ClusterID", "Expression")
-trm_exp_df$Gene <- factor(trm_exp_df$Gene, levels = rev(trm_genes))
-trm_exp_df$ClusterID <- factor(trm_exp_df$ClusterID, levels =  as.character(0:10))
-
-trm_heatmap <- ggplot(data = trm_exp_df, aes(x = ClusterID, y = Gene, fill = Expression)) +
-  geom_tile(colour = "white") +
-  scale_fill_gradient2(low = "royalblue3", mid = "white", high = "red3", limits = c(-2, 3)) +
-  scale_x_discrete(expand = expand_scale(0), position = "top", labels = 0:10) +
-  scale_y_discrete(expand = expand_scale(0)) +
-  theme.lra() +
-  theme(panel.grid = element_blank(),
-        axis.title = element_blank(),
-        axis.text.y = element_text(size = 12),
-        panel.border = element_blank(),
-        axis.ticks = element_blank(),
-        axis.line.y = element_blank(),
-        legend.position = "bottom")
-trm_heatmap
-
 
 #### Sub-Clustering of Cluster 5 (Transitional Cells) #### 
 
@@ -238,53 +243,71 @@ cd45dp_sub_int <- RenameIdents(cd45dp_sub_int, "0" = "5E", "1" = "5M")
 # Figure 4A
 draw.cluster.umap(cd45dp_sub_int, cluster_colors = c("brown", "gold2"), save = F)
 
-# Retrospectively label main Seurat object
+# Retrospectively label main Seurat object (Figure 4B)
 cd45dp_no11_int <- SetIdent(cd45dp_no11_int, cells = WhichCells(cd45dp_sub_int, idents = "5E"), value = "5E")
 cd45dp_no11_int <- SetIdent(cd45dp_no11_int, cells = WhichCells(cd45dp_sub_int, idents = "5M"), value = "5M")
 draw.highlighted.umap(cd45dp_no11_int, highlight_cells = WhichCells(cd45dp_sub_int, idents = "5E"), highlight_color = "brown", T)
 draw.highlighted.umap(cd45dp_no11_int, highlight_cells = WhichCells(cd45dp_sub_int, idents = "5M"), highlight_color = "gold2", T)
 
-# Figure 4D
-fate_markers <- c("NKG7", "GZMH", "GNLY", 
-                  "LGALS1", "ITGB1", "ITGB2",
-                  "ZEB2", "HLA-DRB1", "CD74",
-                  "KLRC3", "MT1F", "TIGIT",
-                  "GZMK", "DUSP2", "LTB", 
-                  "NR4A2", "FOS", "ZFP36L2", 
-                  "IL7R", "AQP3")
+# Figure 4C
+markers_5e_vs_5m <- FindMarkers(cd45dp_no11_int, ident.1 = "5E", ident.2 = "5M")
+write.csv(markers_5e_vs_5m, file = "markers_5e_vs_5m.csv")
+
+fate_markers <- c("LTB",
+                  "FOS",
+                  "NR4A2",
+                  "DUSP2",
+                  "ZFP36L2",
+                  "JUNB",
+                  "CSRNP1",
+                  "IL7R",
+                  "DUSP1",
+                  "KLF6",
+                  "HLA-DRB1",
+                  "ANXA1",
+                  "GZMB",
+                  "FGFBP2",
+                  "NKG7",
+                  "LGALS1",
+                  "GNLY",
+                  "GZMH")
 
 fate_exp <- AverageExpression(cd45dp_no11_int, assay = "RNA", features = fate_markers)
 fate_exp_mat <- as.matrix(fate_exp$RNA[, c("4", "5M", "5E", "3", "7")])
 fate_exp_mat <- cbind(fate_exp_mat, rowMeans(fate_exp_mat[, c("3", "7")]))
-fate_exp_mat <- fate_exp_mat[, -c(4,5)]
-colnames(fate_exp_mat) <- c("Memory", "5M", "5E", "Effector")
-fate_exp_z_mat <- t(scale(t(fate_exp_mat)))
+fate_exp_mat <- fate_exp_mat[, -c(4, 5)]
+colnames(fate_exp_mat)[4] <- "Effector"
+colnames(fate_exp_mat)[1] <- "Memory"
+cluster5_exp_means <- rowMeans(fate_exp_mat[,c("5M", "5E")])
+fate_exp_z_mat <- t(scale(t(fate_exp_mat), center = cluster5_exp_means))
 fate_exp_df <- reshape2::melt(fate_exp_z_mat)
 colnames(fate_exp_df) <- c("Gene", "ClusterID", "Expression")
 fate_exp_df$ClusterID <- factor(fate_exp_df$ClusterID, levels = rev(c("Memory", "5M", "5E", "Effector")))
 
-fate_heatmap <- ggplot(data = fate_exp_df, aes(x = Gene, y = ClusterID, fill = Expression)) +
+fate_heatmap_vertical <- ggplot(data = fate_exp_df, aes(x = ClusterID, y = Gene, fill = Expression)) +
   geom_tile(colour = "white") +
-  scale_fill_gradient2(low = "royalblue3", mid = "white", high = "red3", limits = c(-1.5, 1.5), breaks = c(-1, 0, 1), name = "Expression\n(z-score)") +
-  scale_y_discrete(expand = expand_scale(0), position = "left") +
+  scale_fill_gradient2(low = "royalblue3", mid = "white", high = "red3", limits = c(-1.5, 1.5), oob = scales::squish, breaks = c(-1, 0, 1), name = "Expression\n(z-score)") +
   scale_x_discrete(expand = expand_scale(0)) +
+  scale_y_discrete(expand = expand_scale(0)) +
   theme.lra() +
   theme(panel.grid = element_blank(),
         axis.title = element_blank(),
-        axis.text.y = element_text(size = 12),
-        axis.text.x = element_text(size = 12, hjust = 1, angle = 90),
+        axis.text.x = element_text(size = 12),
         panel.border = element_blank(),
         axis.ticks = element_blank(),
-        axis.line.x = element_blank(),
-        legend.position = "bottom",
-        legend.direction = "horizontal")
-fate_heatmap
-ggsave(fate_heatmap, file = "plots/fate_heamtap.pdf", width = 6, height = 4, device = cairo_pdf)
+        axis.line.y = element_blank(),
+        legend.position = "right",
+        legend.direction = "vertical")
+fate_heatmap_vertical
+
+ggsave(fate_heatmap_vertical, file = "plots/fate_heatmap_updated_vertical.pdf", width = 5, height = 6.5, device = cairo_pdf)
 
 #### MYC Score #### 
 
-# List was generated with ARACNE
-myc_genes <- read.csv("myc_target_genes.csv", stringsAsFactors = F, header = F)$V1
+# Gene set obtained from MSigDB
+hallmark_myc_genes <- read.csv("myc_target_genes_hallmark.csv", header = F)$V1
+myc_genes <- intersect(rownames(cd45dp_no11_int$RNA), hallmark_myc_genes)
+
 myc_gene_expr <- as.matrix(GetAssayData(cd45dp_no11_int$RNA)[myc_genes,])
 myc_gene_expr_avg <- rowMeans(myc_gene_expr)
 myc_gene_expr_sd <- rowSds(myc_gene_expr)
@@ -295,7 +318,10 @@ sample_id_by_cell <- sapply(Cells(cd45dp_no11_int), function(cellname) {
   all_subject_ids[sapply(all_subject_ids, grepl, cellname)]
 })
 
-myc_score_df <- data.frame("SampleID" = sample_id_by_cell, "ClusterID" = Idents(cd45dp_no11_int),  "MycScore" = myc_score)
+myc_score_df <- data.frame("SampleID" = sample_id_by_cell, 
+                           "ClusterID" = Idents(cd45dp_no11_int),
+                           "MycScore" = myc_score)
+myc_score_avg_df <- aggregate(MycScore ~ ClusterID + SampleID, myc_score_df, mean)
 myc_score_cluster5_df <- subset(myc_score_df, ClusterID %in% c("5E", "5M"))
 myc_score_cluster5_df$ClusterID <- factor(myc_score_cluster5_df$ClusterID, levels = c("5E", "5M"))
 
@@ -310,9 +336,21 @@ cd45dp_sub_int_post <- cd45dp_sub_int[, (grepl("Post", Cells(cd45dp_sub_int)) &
 myc_score_cl5_pre_df <- myc_score_cluster5_df[Cells(cd45dp_sub_int_pre),]
 myc_score_cl5_post_df <- myc_score_cluster5_df[Cells(cd45dp_sub_int_post),]
 
-# Figure 4C
+# Figure 4E
 draw.gradient.umap(cd45dp_sub_int_pre, myc_score_cl5_pre_df$MycScore, save = T)
 draw.gradient.umap(cd45dp_sub_int_post, myc_score_cl5_post_df$MycScore, save = T)
+
+# Figure 4F
+myc_score_mat <- matrix(data = 0, nrow = length(all_subject_ids), ncol = length(levels(myc_score_avg_df$ClusterID)))
+rownames(myc_score_mat) <- all_subject_ids
+colnames(myc_score_mat) <- levels(myc_score_avg_df$ClusterID)
+for (i in 1:nrow(myc_score_mat)) {
+  for (j in 1:ncol(myc_score_mat)) {
+    myc_score_mat[i, j] <- mean(subset(myc_score_df, ClusterID == colnames(myc_score_mat)[j] &
+                                         SampleID == rownames(myc_score_mat)[i])$MycScore)
+  }
+}
+write.csv(myc_score_mat, file = "tables/myc_score_matrix_msigdb.csv")
 
 #### Clonotype Sharing Grids #### 
 
@@ -328,23 +366,22 @@ treated_list <- list(p119_clonotypes,
                      p687_clonotypes,
                      p823_clonotypes)
 
-calculate.correction.matrix <- function() {
-  pre_cluster_ids <- c("0", "1", "2", "3", "4", "5E", "5M", "6", "7", "8", "9", "10")
-  correction_factors <- rep(0, length(pre_cluster_ids))
-  names(correction_factors) <- pre_cluster_ids
-  for (pre_cluster_id in pre_cluster_ids) {
-    current_subfactors <- lapply(treated_list, function(clonotypes) {
-      unique_cluster_clonotypes <- unique(subset(clonotypes, ClusterID == pre_cluster_id)$Clonotype)
-      length(which(startsWith(unique_cluster_clonotypes, "U_")))
-    })
-    current_factor <- sum(unlist(current_subfactors))
-    correction_factors[pre_cluster_id] <- current_factor
-  }
-  return(matrix(correction_factors, nrow = length(pre_cluster_ids), ncol = length(pre_cluster_ids), byrow = F))
+# Normalization Matrix
+pre_cluster_ids <- c("0", "1", "2", "3", "4", "5E", "5M", "6", "7", "8", "9", "10")
+correction_factors <- rep(0, length(pre_cluster_ids))
+names(correction_factors) <- pre_cluster_ids
+for (pre_cluster_id in pre_cluster_ids) {
+  current_subfactors <- lapply(treated_list, function(clonotypes) {
+    unique_cluster_clonotypes <- unique(subset(clonotypes, ClusterID == pre_cluster_id)$Clonotype)
+    length(which(startsWith(unique_cluster_clonotypes, "U_")))
+  })
+  current_factor <- sum(unlist(current_subfactors))
+  correction_factors[pre_cluster_id] <- current_factor
 }
 
-mini_correction_mat <- calculate.correction.matrix()
+mini_correction_mat <- matrix(correction_factors, nrow = length(pre_cluster_ids), ncol = length(pre_cluster_ids), byrow = F)
 
+# Figure 4G
 p119_pre_sharing_mat <- compute.pre.clonotypes(p119_clonotypes)
 p560_pre_sharing_mat <- compute.pre.clonotypes(p560_clonotypes)
 p671_pre_sharing_mat <- compute.pre.clonotypes(p671_clonotypes)
@@ -357,8 +394,10 @@ total_pre_sharing_mat <- (p119_pre_sharing_mat
                           + p823_pre_sharing_mat)
 
 corrected_pre_sharing_mat <- round(100 * total_pre_sharing_mat / mini_correction_mat, 0)
-plot.sharing.mat(corrected_pre_sharing_mat, prefix = "pre_norm_", high_color = "green4", limit_scale = 60, save = T)
+plot.sharing.mat(corrected_pre_sharing_mat, prefix = "pre_norm_", high_color = "green4", limit_scale = 60, save = F)
+plot.sharing.mat(p671_pre_sharing_mat, prefix = "pre_", high_color = "green4", limit_scale = 35, save = F)
 
+# Supplmentary Figure 7B
 p119_added_sharing_mat <- compute.added.clonotypes(p119_clonotypes)
 p560_added_sharing_mat <- compute.added.clonotypes(p560_clonotypes)
 p671_added_sharing_mat <- compute.added.clonotypes(p671_clonotypes)
@@ -370,8 +409,9 @@ total_added_sharing_mat <- (p119_added_sharing_mat
                             + p687_added_sharing_mat
                             + p823_added_sharing_mat)
 
-plot.sharing.mat(total_added_sharing_mat, prefix = "added_", save = T)
+plot.sharing.mat(total_added_sharing_mat, prefix = "added_", limit_scale = 49, save = F)
 
+# Supplmentary Figure 7B
 p119_removed_sharing_mat <- compute.removed.clonotypes(p119_clonotypes)
 p560_removed_sharing_mat <- compute.removed.clonotypes(p560_clonotypes)
 p671_removed_sharing_mat <- compute.removed.clonotypes(p671_clonotypes)
@@ -383,6 +423,77 @@ total_removed_sharing_mat <- (p119_removed_sharing_mat
                               + p687_removed_sharing_mat
                               + p823_removed_sharing_mat)
 
-plot.sharing.mat(total_removed_sharing_mat, prefix = "removed_", save = T)
+plot.sharing.mat(total_removed_sharing_mat, prefix = "removed_", limit_scale = -57, save = F)
 
+# Figure 4I
+p119_net_sharing <- compute.net.change.clonotypes(p119_clonotypes)
+p560_net_sharing <- compute.net.change.clonotypes(p560_clonotypes)
+p671_net_sharing <- compute.net.change.clonotypes(p671_clonotypes)
+p687_net_sharing <- compute.net.change.clonotypes(p687_clonotypes)
+p823_net_sharing <- compute.net.change.clonotypes(p823_clonotypes)
+total_net_sharing <- (p119_net_sharing
+                      + p560_net_sharing
+                      + p671_net_sharing
+                      + p687_net_sharing
+                      + p823_net_sharing)
+
+net_sharing_df <- data.frame("ClusterID" = names(total_net_sharing), "NetFlux" = total_net_sharing)
+net_sharing_df$ClusterID <- factor(net_sharing_df$ClusterID, levels = pre_cluster_ids)
+net_sharing_plot <- ggplot(net_sharing_df, aes(x = ClusterID, y = NetFlux, fill = ClusterID)) +
+  scale_y_continuous(limits = c(-50, 50), expand = expand_scale(0)) +
+  scale_x_discrete() +
+  annotate("rect", xmin = 0, xmax = 12.5, ymin = 0, ymax = 50, alpha = 0.1, fill = "skyblue2") +
+  annotate("rect", xmin = 0, xmax = 12.5, ymin = -50, ymax = 0, alpha = 0.1, fill = "red2") +
+  annotate("text", x = 11, y = 40, label = "Clonotypes\nGained", colour = "navy") +
+  annotate("text", x = 11, y = -40, label = "Clonotypes\nLost", colour = "red2") +
+  geom_hline(yintercept = 0) +
+  geom_col(aes(fill = ClusterID), colour = "black", size = 0.25) +
+  scale_fill_manual(values = c(intg_clusters_colors, "5E" = "brown", "5M" = "gold2"), guide = "none") +  
+  ylab("Change in Clonotypes") + xlab("") +
+  theme.lra() +
+  theme(panel.grid = element_blank(),
+        panel.border = element_blank())
+net_sharing_plot
+ggsave(net_sharing_plot, file = "plots/net_sharing_plot.pdf", width = 5, height = 4, device = cairo_pdf)
+
+# Newly Spread Clonotypes (Figure 4J)
+clonotype_spread_df <- data.frame(ClusterID = "", ClonotypeCount = 0, SpreadCount = 0, stringsAsFactors = F)
+for (cluster_id in pre_cluster_ids) {
+  total_cluster_clonotypes <- 0
+  total_cluster_spread <- 0
+  for (clonotype_df in treated_list) {
+    pre_clonotypes <- subset(clonotype_df, !endsWith(ClusterID, "'"))
+    pre_agg <- aggregate(ClusterID ~ Clonotype, pre_clonotypes, c)
+    cluster_clonotypes <- subset(pre_agg, ClusterID %in% cluster_id)$Clonotype
+    cluster_clonotypes <- unique(cluster_clonotypes[startsWith(cluster_clonotypes, "U_")])
+    pre_post_ids <- c(cluster_id, paste0(cluster_id, "'"))
+    cluster_spread_clonotypes <- unique(subset(clonotype_df, Clonotype %in% cluster_clonotypes & !(ClusterID %in% pre_post_ids))$Clonotype)
+    total_cluster_clonotypes <- total_cluster_clonotypes + length(cluster_clonotypes)
+    total_cluster_spread <- total_cluster_spread + length(cluster_spread_clonotypes)
+    
+    post_clonotypes <- subset(clonotype_df, endsWith(ClusterID, "'"))  
+    post_agg <- aggregate(ClusterID ~ Clonotype, post_clonotypes, c)
+    post_subset <- subset(post_agg, Clonotype %in% cluster_spread_clonotypes)
+  }
+  
+  current_spread_df <- data.frame(ClusterID = paste(cluster_id, collapse = "-"), ClonotypeCount = total_cluster_clonotypes, SpreadCount = total_cluster_spread, stringsAsFactors = F)
+  clonotype_spread_df <- rbind(clonotype_spread_df, current_spread_df)
+}
+
+clonotype_spread_df <- clonotype_spread_df[-c(1), ]
+clonotype_spread_df$PercentSpread <- round(100 * (clonotype_spread_df$SpreadCount / clonotype_spread_df$ClonotypeCount), 1)
+clonotype_spread_df[10:12, "PercentSpread"] <- 0
+clonotype_spread_df$ClusterID <- factor(spread_df$ClusterID, levels = pre_cluster_ids)
+
+clonotype_spread_plot <- ggplot(data = clonotype_spread_df, aes(x = ClusterID, y = PercentSpread)) +
+  geom_col(aes(fill = ClusterID), colour = "black", size = 0.2) +
+  scale_fill_manual(values = c(intg_clusters_colors, "5E" = "brown", "5M" = "gold2"), guide = "none") +  
+  scale_y_continuous(expand = expand_scale(0), limits = c(0, 62)) + 
+  xlab("") +
+  ylab("Newly Shared Clonotypes (%)") +
+  theme.lra() + 
+  theme(panel.grid = element_blank(),
+        panel.border = element_blank())
+spreadclonotype_spread_plot_plot
+ggsave(clonotype_spread_plot, file = "spread_plot_extended_treated.pdf", width = 5, height = 4, device = cairo_pdf)
 
