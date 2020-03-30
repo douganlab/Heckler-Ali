@@ -65,8 +65,8 @@ create.seurat.object.for.healthy.subject <- function(subject_id) {
   raw_data <- Read10X(paste0(data.dir = "10x/", subject_id, "/raw_feature_bc_matrix"))
   seurat_object <- CreateSeuratObject(counts = raw_data, project = subject_id, min.cells = 3, min.features = 200)
   seurat_object[["percent_mt"]] <- PercentageFeatureSet(seurat_object, pattern = "^MT-")
-  feature_cutoff_top <- mean(seurat_object$nFeature_RNA) + 3 * sd(seurat_object$nFeature_RNA)
-  feature_cutoff_btm <- mean(seurat_object$nFeature_RNA) - 3 * sd(seurat_object$nFeature_RNA)
+  feature_cutoff_top <- mean(seurat_object$nFeature_RNA) + 2 * sd(seurat_object$nFeature_RNA)
+  feature_cutoff_btm <- mean(seurat_object$nFeature_RNA) - 2 * sd(seurat_object$nFeature_RNA)
   mt_cutoff <- mean(seurat_object$percent_mt) + 2 * sd(seurat_object$percent_mt)
   filter <- (seurat_object[["percent_mt"]] < mt_cutoff
              & seurat_object[["nFeature_RNA"]] < feature_cutoff_top 
